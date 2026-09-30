@@ -1,0 +1,7 @@
+device,channel,region,visits,conversions
+mobile,direct,global,3300,280
+mobile,partner,global,2200,187
+desktop,direct,global,2100,200
+desktop,partner,global,1400,133
+tablet,direct,global,600,42
+tablet,partner,global,400,28

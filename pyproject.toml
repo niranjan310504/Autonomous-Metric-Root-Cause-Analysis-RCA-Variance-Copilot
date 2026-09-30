@@ -1,0 +1,50 @@
+[tool.poetry]
+name = "autonomous-metric-rca-copilot"
+version = "0.1.0"
+description = "Autonomous metric root-cause analysis and variance copilot"
+authors = ["RCA Copilot Team"]
+readme = "README.md"
+packages = [{ include = "core", from = "src" }, { include = "data", from = "src" }, { include = "engine", from = "src" }, { include = "agent", from = "src" }, { include = "ui", from = "src" }, { include = "db", from = "src" }, { include = "agents", from = "src" }]
+
+[tool.poetry.dependencies]
+python = ">=3.11,<4.0"
+duckdb = ">=1.0"
+langgraph = ">=0.2"
+langchain-core = ">=0.3"
+langchain-openai = ">=0.2"
+pydantic = ">=2.0"
+pydantic-settings = ">=2.0"
+scikit-learn = ">=1.4"
+numpy = ">=1.26"
+pandas = ">=2.2"
+plotly = ">=5.18"
+streamlit = ">=1.35"
+scipy = ">=1.12"
+
+[tool.poetry.group.dev.dependencies]
+pytest = ">=8.0"
+pytest-cov = ">=5.0"
+ruff = ">=0.6"
+mypy = ">=1.11"
+
+[tool.pytest.ini_options]
+addopts = "--strict-markers"
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "ANN"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+mypy_path = "src"
+
+[build-system]
+requires = ["poetry-core>=1.9.0"]
+build-backend = "poetry.core.masonry.api"

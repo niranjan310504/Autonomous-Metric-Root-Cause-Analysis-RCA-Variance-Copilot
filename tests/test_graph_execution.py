@@ -17,4 +17,13 @@ def test_graph_produces_trace_and_finding() -> None:
         "narrative_synthesizer",
     ]
     assert result.findings
+    assert any(
+        finding.rate_effect != 0.0 or finding.mix_effect != 0.0
+        for finding in result.findings
+    )
+    assert result.subgroups
+    assert all(
+        {"rule", "support", "conversion_rate", "lift_vs_overall"} <= subgroup.keys()
+        for subgroup in result.subgroups
+    )
     assert "driver" in result.narrative

@@ -55,13 +55,26 @@ def mine_subgroups(
     leaf_rates = expanded.assign(_leaf=leaf_ids).groupby("_leaf")["_outcome"].agg(["mean", "size"])
     overall = float(expanded["_outcome"].mean())
     readable = export_text(tree, feature_names=list(encoded.columns)).splitlines()
+    leaf_rules: list[str] = []
+    path: list[str] = []
+    for line in readable:
+        if "|---" not in line:
+            continue
+        prefix, value = line.split("|---", maxsplit=1)
+        depth = prefix.count("|   ")
+        value = value.strip()
+        path = path[:depth]
+        if value.startswith("class:"):
+            leaf_rules.append(" AND ".join(path))
+        else:
+            path.append(value)
+    ordered_leaf_ids = sorted(leaf_rates.index)
     return [
         SubgroupRule(
-            rule=line.strip(),
-            support=int(leaf_rates.iloc[index]["size"]),
-            conversion_rate=float(leaf_rates.iloc[index]["mean"]),
-            lift_vs_overall=float(leaf_rates.iloc[index]["mean"] / overall) if overall else 0.0,
+            rule=rule,
+            support=int(leaf_rates.loc[leaf_id, "size"]),
+            conversion_rate=float(leaf_rates.loc[leaf_id, "mean"]),
+            lift_vs_overall=float(leaf_rates.loc[leaf_id, "mean"] / overall) if overall else 0.0,
         )
-        for index, line in enumerate(readable)
-        if line.strip() and "|" not in line and index < len(leaf_rates)
+        for rule, leaf_id in zip(leaf_rules, ordered_leaf_ids, strict=True)
     ]

@@ -26,6 +26,8 @@ class Finding(BaseModel):
     dimension: str
     segment: str
     contribution: float
+    rate_effect: float = 0.0
+    mix_effect: float = 0.0
     evidence: str
 
 
@@ -40,6 +42,7 @@ class RCAState(BaseModel):
     schema_profile: SchemaProfile | None = None
     hypotheses: list[Hypothesis] = Field(default_factory=list)
     findings: list[Finding] = Field(default_factory=list)
+    subgroups: list[dict[str, Any]] = Field(default_factory=list)
     narrative: str = ""
     trace: list[str] = Field(default_factory=list)
     error: str | None = None

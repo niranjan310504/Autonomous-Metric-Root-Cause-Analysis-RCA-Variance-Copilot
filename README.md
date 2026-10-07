@@ -42,13 +42,18 @@ Run the demo:
 streamlit run src/app.py
 ```
 
+To enable the dashboard's Slack alert button, set `SLACK_WEBHOOK_URL` in the environment or a
+local `.env` file. The dashboard keeps the webhook value out of the UI and reports delivery
+failures without affecting the diagnostic result.
+
 Generate the sample CSVs with `python data/generate_synthetic_data.py`.
 
 ## Architecture and safety
 
 - `src/db/duckdb_manager.py` validates single-statement `SELECT`/`WITH` SQL, caps results at
   500 rows, and exposes schema/cardinality discovery.
-- `src/engine/` contains deterministic conversion-rate waterfall and decision-tree subgroup math.
+- `src/engine/` contains deterministic conversion-rate waterfall, decision-tree subgroup math, and
+  time-series baseline slicing with `slice_wow_baseline` and `slice_yoy_baseline`.
 - `src/agents/` contains strict Pydantic state and small graph nodes.
 - `src/graph.py` composes the nodes into a LangGraph workflow; `src/app.py` presents the trace.
 - Arithmetic and attribution never depend on an LLM. An LLM adapter can be added around the

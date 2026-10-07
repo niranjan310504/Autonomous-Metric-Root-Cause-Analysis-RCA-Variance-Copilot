@@ -1,19 +1,16 @@
 """Executive narrative synthesis with a deterministic default."""
 
+from agents.llm_adapter import generate_actionable_narrative
 from agents.state import RCAState
 
 
 def synthesize_narrative(state: RCAState) -> RCAState:
-    """Create a concise executive diagnostic from computed findings."""
+    """Create an executive diagnostic from validated computed findings."""
 
-    if not state.findings:
-        state.narrative = "No material dimensional driver was identified."
-    else:
-        top = state.findings[0]
-        state.narrative = (
-            f"{state.metric_name} changed from the baseline to the current period. "
-            f"The strongest observed driver is {top.dimension}={top.segment}, "
-            f"with {top.evidence} and an estimated contribution of {top.contribution:+.2%}."
-        )
+    state.narrative = generate_actionable_narrative(
+        metric_name=state.metric_name,
+        findings=[finding.model_dump() for finding in state.findings],
+        subgroups=state.subgroups,
+    )
     state.trace.append("narrative_synthesizer")
     return state

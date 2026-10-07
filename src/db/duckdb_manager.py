@@ -6,6 +6,7 @@ import re
 import time
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Any, cast
 
 import duckdb
 import pandas as pd
@@ -86,5 +87,6 @@ class DuckDBManager:
             result = self.run_read_only(
                 f"SELECT COUNT(DISTINCT {column}) AS cardinality FROM {table_name}"
             )
-            results[column] = min(int(result.iloc[0, 0]), limit)
+            cardinality = cast(Any, result.iloc[0, 0])
+            results[column] = min(int(cardinality), limit)
         return results

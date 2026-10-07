@@ -57,4 +57,17 @@ $$\Delta \text{Total Rate} = \underbrace{\sum w_i^B \cdot \Delta r_i}_{\text{Rat
 - Fully integrate Decision Tree leaf mining (`subgroup_miner.py`) into the core investigation node to surface compound segment intersections (e.g. `device=iOS AND app_version=2.4 AND gateway=stripe`).
 
 ### 5. Automated Push Alerts & Webhooks
-- Support headless execution modes triggered by data pipelines (dbt/Airflow) that push structured alerts directly to Slack, email, or webhooks.
+- Support headless execution modes triggered by data pipelines (dbt/Airflow) that push structured alerts directly to Slack, email, or webhooks.
+
+### LLM Verification Rules
+
+- A deterministic fallback is resilience behavior, never evidence that LLM integration succeeded.
+- Validate Gemini through the public `generate_actionable_narrative` entrypoint, not only through
+   `_generate_with_gemini` or another internal helper.
+- A live LLM smoke test must fail when the result is not labeled `[Gemini]`; use
+   `scripts/verify_gemini.py` for this check.
+- Provider exceptions must be observable in logs or strict verification errors. Do not silently
+   report a fallback as a successful provider run.
+- Never print, commit, or include API keys in prompts, logs, tests, screenshots, or responses.
+- Treat a successful type check, unit test, or fallback response as separate from live provider
+   verification. Report each result independently.

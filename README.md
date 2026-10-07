@@ -13,6 +13,29 @@ pip install -r requirements.txt
 pytest
 ```
 
+To enable Gemini-backed executive narratives, install the optional provider SDK:
+
+```bash
+pip install "google-genai>=1.0"
+```
+
+Set `GEMINI_API_KEY` in the environment or a local `.env` file. Without the key, without the
+optional SDK, or when Gemini is unavailable, the narrative node returns a labeled deterministic
+fallback. The Gemini prompt contains only precomputed findings and subgroup evidence; it does not
+perform metric calculations or attribution.
+
+Verify the real provider path before relying on Gemini-backed output:
+
+```bash
+python scripts/verify_gemini.py
+```
+
+This check calls the same public adapter used by the application and exits with an error if the
+key is missing or Gemini falls back. It does not print the API key.
+
+The default model can be changed without editing code by setting `GEMINI_MODEL` in `.env` if the
+provider reports that the default model is unavailable or temporarily overloaded.
+
 Run the demo:
 
 ```bash

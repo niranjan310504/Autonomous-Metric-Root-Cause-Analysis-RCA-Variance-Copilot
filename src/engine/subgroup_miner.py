@@ -32,28 +32,47 @@ def mine_subgroups(
     if not dimensions or any(column not in frame for column in required):
         raise KeyError("all dimensions and metric columns must exist")
     rows: list[dict[str, object]] = []
+    sample_weights: list[int] = []
     for record in frame.to_dict("records"):
         visits = int(record[denominator])
         conversions = int(record[numerator])
-        rows.extend(
-            [{**{column: str(record[column]) for column in dimensions}, "_outcome": 1}]
-            * conversions
-        )
-        rows.extend(
-            [{**{column: str(record[column]) for column in dimensions}, "_outcome": 0}]
-            * (visits - conversions)
-        )
-    expanded = pd.DataFrame(rows)
-    if expanded.empty:
+        segment = {column: str(record[column]) for column in dimensions}
+        non_conversions = visits - conversions
+        if conversions > 0:
+            rows.append({**segment, "_outcome": 1})
+            sample_weights.append(conversions)
+        if non_conversions > 0:
+            rows.append({**segment, "_outcome": 0})
+            sample_weights.append(non_conversions)
+    aggregated = pd.DataFrame(rows)
+    if aggregated.empty:
         return []
-    encoded = pd.get_dummies(expanded[dimensions], dtype=float)
+    encoded = pd.get_dummies(aggregated[dimensions], dtype=float)
+    total_weight = sum(sample_weights)
+    min_weight_fraction_leaf = min(min_samples_leaf / total_weight, 0.5)
     tree = DecisionTreeClassifier(
-        max_depth=max_depth, min_samples_leaf=min_samples_leaf, random_state=0
+        max_depth=max_depth,
+        min_weight_fraction_leaf=min_weight_fraction_leaf,
+        random_state=0,
     )
-    tree.fit(encoded, expanded["_outcome"])
+    tree.fit(encoded, aggregated["_outcome"], sample_weight=sample_weights)
     leaf_ids = tree.apply(encoded)
-    leaf_rates = expanded.assign(_leaf=leaf_ids).groupby("_leaf")["_outcome"].agg(["mean", "size"])
-    overall = float(expanded["_outcome"].mean())
+    weighted = aggregated.assign(
+        _leaf=leaf_ids,
+        _weight=sample_weights,
+        _weighted_outcome=aggregated["_outcome"] * sample_weights,
+    )
+    leaf_stats = weighted.groupby("_leaf").agg(
+        support=("_weight", "sum"),
+        conversions=("_weighted_outcome", "sum"),
+    )
+    leaf_stats["conversion_rate"] = (
+        leaf_stats["conversions"] / leaf_stats["support"]
+    )
+    overall = sum(
+        weight * int(outcome)
+        for weight, outcome in zip(sample_weights, aggregated["_outcome"], strict=True)
+    ) / total_weight
     readable = export_text(tree, feature_names=list(encoded.columns)).splitlines()
     leaf_rules: list[str] = []
     path: list[str] = []
@@ -68,13 +87,17 @@ def mine_subgroups(
             leaf_rules.append(" AND ".join(path))
         else:
             path.append(value)
-    ordered_leaf_ids = sorted(leaf_rates.index)
+    ordered_leaf_ids = sorted(leaf_stats.index)
     return [
         SubgroupRule(
             rule=rule,
-            support=int(leaf_rates.loc[leaf_id, "size"]),
-            conversion_rate=float(leaf_rates.loc[leaf_id, "mean"]),
-            lift_vs_overall=float(leaf_rates.loc[leaf_id, "mean"] / overall) if overall else 0.0,
+            support=int(leaf_stats.loc[leaf_id, "support"]),
+            conversion_rate=float(leaf_stats.loc[leaf_id, "conversion_rate"]),
+            lift_vs_overall=(
+                float(leaf_stats.loc[leaf_id, "conversion_rate"] / overall)
+                if overall
+                else 0.0
+            ),
         )
         for rule, leaf_id in zip(leaf_rules, ordered_leaf_ids, strict=True)
     ]

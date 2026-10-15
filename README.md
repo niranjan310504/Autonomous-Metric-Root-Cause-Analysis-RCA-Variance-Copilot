@@ -16,7 +16,7 @@ pytest
 To enable Gemini-backed executive narratives, install the optional provider SDK:
 
 ```bash
-pip install "google-genai>=1.0"
+pip install "google-genai>=2.28.0"
 ```
 
 Set `GEMINI_API_KEY` in the environment or a local `.env` file. Without the key, without the

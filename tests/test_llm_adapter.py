@@ -1,4 +1,6 @@
+import sys
 from collections.abc import Mapping
+from types import SimpleNamespace
 
 import pytest
 
@@ -20,6 +22,28 @@ SUBGROUPS: list[Mapping[str, object]] = [
         "lift_vs_overall": 0.25,
     }
 ]
+
+
+def test_gemini_uses_interactions_api(monkeypatch: pytest.MonkeyPatch) -> None:
+    request: dict[str, str] = {}
+
+    class FakeInteractions:
+        def create(self, **kwargs: str) -> SimpleNamespace:
+            request.update(kwargs)
+            return SimpleNamespace(output_text="Generated through interactions.")
+
+    class FakeGenai:
+        def __init__(self, api_key: str) -> None:
+            assert api_key == "test-only-key"
+            self.interactions = FakeInteractions()
+
+    monkeypatch.setitem(sys.modules, "google.genai", SimpleNamespace(Client=FakeGenai))
+    monkeypatch.setenv("GEMINI_MODEL", "test-model")
+
+    narrative = llm_adapter._generate_with_gemini("validated prompt", "test-only-key")
+
+    assert narrative == "Generated through interactions."
+    assert request == {"model": "test-model", "input": "validated prompt"}
 
 
 def test_missing_key_returns_labeled_deterministic_fallback(

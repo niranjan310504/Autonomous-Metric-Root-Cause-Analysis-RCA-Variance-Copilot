@@ -74,15 +74,15 @@ def _build_prompt(
 
 
 def _generate_with_gemini(prompt: str, api_key: str) -> str:
-    """Call Gemini without making the SDK a required import."""
+    """Call Gemini's provider-recommended Interactions API."""
 
     genai: Any = importlib.import_module("google.genai")
     client: Any = genai.Client(api_key=api_key)
-    response: Any = client.models.generate_content(
+    response: Any = client.interactions.create(
         model=os.getenv("GEMINI_MODEL", _DEFAULT_MODEL),
-        contents=prompt,
+        input=prompt,
     )
-    text = getattr(response, "text", None)
+    text = getattr(response, "output_text", None)
     if not isinstance(text, str) or not text.strip():
         raise ValueError("Gemini returned an empty narrative")
     return text.strip()

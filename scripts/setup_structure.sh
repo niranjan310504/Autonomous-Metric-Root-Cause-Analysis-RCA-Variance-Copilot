@@ -2,16 +2,15 @@
 set -euo pipefail
 
 mkdir -p \
-  src/core \
-  src/data \
+  src/agents \
+  src/db \
   src/engine \
-  src/agent \
-  src/ui \
+  src/alerting \
   tests/data \
   tests/engine \
   tests/agent
 
-for package in core data engine agent ui; do
+for package in agents db engine alerting; do
   touch "src/${package}/__init__.py"
 done
 

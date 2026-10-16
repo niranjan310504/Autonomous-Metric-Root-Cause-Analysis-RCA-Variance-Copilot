@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Autonomous metric root-cause analysis and variance copilot"
 authors = ["RCA Copilot Team"]
 readme = "README.md"
-packages = [{ include = "core", from = "src" }, { include = "data", from = "src" }, { include = "engine", from = "src" }, { include = "agent", from = "src" }, { include = "ui", from = "src" }, { include = "db", from = "src" }, { include = "agents", from = "src" }, { include = "alerting", from = "src" }]
+packages = [{ include = "agents", from = "src" }, { include = "db", from = "src" }, { include = "engine", from = "src" }, { include = "alerting", from = "src" }]
 
 [tool.poetry.dependencies]
 python = ">=3.11,<4.0"

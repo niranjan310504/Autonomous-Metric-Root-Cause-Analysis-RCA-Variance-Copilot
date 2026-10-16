@@ -1,21 +1,12 @@
 """Tests for the timestamped benchmark data generator."""
 
-import importlib.util
-from pathlib import Path
-from typing import Any, cast
-
 import pandas as pd
 import pytest
+from data.generate_synthetic_data import generate_timeseries_dataset
 
 
 def _generate_timeseries_dataset(days: int = 30) -> pd.DataFrame:
-    generator_path = Path(__file__).parents[2] / "data" / "generate_synthetic_data.py"
-    spec = importlib.util.spec_from_file_location("synthetic_generator", generator_path)
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    generator = cast(Any, module).generate_timeseries_dataset
-    return cast(pd.DataFrame, generator(days=days))
+    return generate_timeseries_dataset(days=days)
 
 
 def test_generate_timeseries_dataset_is_reproducible_and_timestamped() -> None:

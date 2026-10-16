@@ -6,9 +6,6 @@ from typing import Any, TypedDict, cast
 
 import pandas as pd
 
-# pyrefly: ignore [missing-import]
-from langgraph.graph import END, StateGraph
-
 from agents.hypothesis_generator import generate_hypotheses
 from agents.narrative_synthesizer import synthesize_narrative
 from agents.schema_inspector import inspect_schema
@@ -78,6 +75,10 @@ def run_timeseries_analysis(
 
 def build_graph(manager: DuckDBManager) -> object:
     """Compile a StateGraph for callers that need node-level orchestration."""
+
+    # Keep the common direct-analysis path independent of LangGraph's import cost.
+    # pyrefly: ignore [missing-import]
+    from langgraph.graph import END, StateGraph
 
     workflow = StateGraph(GraphState)
 

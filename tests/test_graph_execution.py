@@ -1,35 +1,26 @@
-import importlib.util
 from typing import Any, cast
 
 import pandas as pd
 import pytest
+from data.generate_synthetic_data import generate_dataset, generate_timeseries_dataset
 
+import graph
 from agents import llm_adapter
-from graph import run_analysis, run_timeseries_analysis
+from agents.state import RCAState
 
 
 def _generate_dataset() -> tuple[pd.DataFrame, pd.DataFrame]:
-    spec = importlib.util.spec_from_file_location("generator", "data/generate_synthetic_data.py")
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return cast(tuple[pd.DataFrame, pd.DataFrame], module.generate_dataset())
+    return generate_dataset()
 
 
 def _generate_timeseries_dataset(days: int = 30) -> pd.DataFrame:
-    spec = importlib.util.spec_from_file_location(
-        "timeseries_generator", "data/generate_synthetic_data.py"
-    )
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return cast(pd.DataFrame, cast(Any, module).generate_timeseries_dataset(days=days))
+    return generate_timeseries_dataset(days=days)
 
 
 def test_graph_produces_trace_and_finding(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     baseline, current = _generate_dataset()
-    result = run_analysis(baseline, current)
+    result = graph.run_analysis(baseline, current)
     assert result.trace == [
         "schema_inspector",
         "hypothesis_generator",
@@ -63,7 +54,7 @@ def test_graph_with_mocked_gemini(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     baseline, current = _generate_dataset()
 
-    result = run_analysis(baseline, current)
+    result = graph.run_analysis(baseline, current)
 
     assert result.trace == [
         "schema_inspector",
@@ -80,7 +71,7 @@ def test_timeseries_graph_runs_wow_analysis(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     frame = _generate_timeseries_dataset()
 
-    result, baseline, current = run_timeseries_analysis(frame)
+    result, baseline, current = graph.run_timeseries_analysis(frame)
 
     assert result.findings
     assert not baseline.empty
@@ -90,21 +81,35 @@ def test_timeseries_graph_runs_wow_analysis(monkeypatch: pytest.MonkeyPatch) -> 
 
 def test_timeseries_graph_rejects_invalid_mode() -> None:
     with pytest.raises(ValueError, match="mode must be either"):
-        run_timeseries_analysis(_generate_timeseries_dataset(), mode="daily")
+        graph.run_timeseries_analysis(_generate_timeseries_dataset(), mode="daily")
 
 
 def test_timeseries_graph_rejects_insufficient_yoy_data() -> None:
     with pytest.raises(ValueError, match="two non-empty comparison windows"):
-        run_timeseries_analysis(_generate_timeseries_dataset(), mode="yoy")
+        graph.run_timeseries_analysis(_generate_timeseries_dataset(), mode="yoy")
 
 
 def test_timeseries_graph_runs_yoy_analysis(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     frame = _generate_timeseries_dataset(days=730)
+    captured: dict[str, pd.DataFrame] = {}
 
-    result, baseline, current = run_timeseries_analysis(frame, mode="yoy")
+    def fake_run_analysis(baseline: pd.DataFrame, current: pd.DataFrame) -> RCAState:
+        captured["baseline"] = baseline
+        captured["current"] = current
+        return RCAState(
+            baseline=cast(list[dict[str, Any]], baseline.to_dict("records")),
+            current=cast(list[dict[str, Any]], current.to_dict("records")),
+        )
 
-    assert result.findings
+    monkeypatch.setattr(graph, "run_analysis", fake_run_analysis)
+
+    result, baseline, current = graph.run_timeseries_analysis(frame, mode="yoy")
+
+    assert result.baseline == baseline.to_dict("records")
+    assert result.current == current.to_dict("records")
+    assert captured["baseline"].equals(baseline)
+    assert captured["current"].equals(current)
     assert baseline["timestamp"].max() < current["timestamp"].min()
     assert baseline["timestamp"].nunique() >= 300
     assert current["timestamp"].nunique() >= 300

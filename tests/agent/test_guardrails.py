@@ -2,7 +2,7 @@
 
 import pytest
 
-from agent.guards import validate_read_only_sql
+from db.duckdb_manager import validate_read_only_sql
 
 
 def test_read_only_query_is_allowed() -> None:

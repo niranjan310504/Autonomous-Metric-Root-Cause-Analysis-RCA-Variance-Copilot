@@ -7,11 +7,14 @@ import json
 import logging
 import os
 from collections.abc import Mapping, Sequence
-from typing import Any
+from dataclasses import dataclass
+from enum import StrEnum
+from typing import Any, Literal
 
 from dotenv import load_dotenv
 
 _DEFAULT_MODEL = "gemini-3.8-flash"
+_DEFAULT_TIMEOUT_MS = 30_000
 _LOGGER = logging.getLogger(__name__)
 
 load_dotenv()
@@ -19,6 +22,31 @@ load_dotenv()
 
 class GeminiProviderError(RuntimeError):
     """Raised when strict Gemini verification cannot reach the provider."""
+
+    def __init__(self, message: str, category: GeminiFailureCategory) -> None:
+        super().__init__(message)
+        self.category = category
+
+
+class GeminiFailureCategory(StrEnum):
+    """Safe categories for failures reaching Gemini."""
+
+    CONFIGURATION = "configuration"
+    TIMEOUT = "timeout"
+    AUTHENTICATION = "authentication"
+    MODEL_API = "model/API"
+    QUOTA = "quota"
+    NETWORK = "network"
+    PROVIDER = "provider"
+
+
+@dataclass(frozen=True)
+class NarrativeResult:
+    """Narrative text plus safe provider/fallback status for the UI."""
+
+    narrative: str
+    source: Literal["gemini", "deterministic_fallback"]
+    provider_error: str | None = None
 
 
 def _fallback_narrative(
@@ -73,11 +101,39 @@ def _build_prompt(
     )
 
 
+def _timeout_ms() -> int:
+    """Read and validate the provider timeout without exposing credentials."""
+
+    raw_timeout = os.getenv("GEMINI_TIMEOUT_MS")
+    if raw_timeout is None or not raw_timeout.strip():
+        return _DEFAULT_TIMEOUT_MS
+    try:
+        timeout_ms = int(raw_timeout)
+    except ValueError as exc:
+        raise GeminiProviderError(
+            "GEMINI_TIMEOUT_MS must be a positive integer in milliseconds",
+            GeminiFailureCategory.CONFIGURATION,
+        ) from exc
+    if timeout_ms <= 0:
+        raise GeminiProviderError(
+            "GEMINI_TIMEOUT_MS must be a positive integer in milliseconds",
+            GeminiFailureCategory.CONFIGURATION,
+        )
+    return timeout_ms
+
+
 def _generate_with_gemini(prompt: str, api_key: str) -> str:
     """Call Gemini's provider-recommended Interactions API."""
 
+    timeout_ms = _timeout_ms()
     genai: Any = importlib.import_module("google.genai")
-    client: Any = genai.Client(api_key=api_key)
+    genai_types: Any = getattr(genai, "types", None)
+    if genai_types is None:
+        genai_types = importlib.import_module("google.genai.types")
+    client: Any = genai.Client(
+        api_key=api_key,
+        http_options=genai_types.HttpOptions(timeout=timeout_ms),
+    )
     response: Any = client.interactions.create(
         model=os.getenv("GEMINI_MODEL", _DEFAULT_MODEL),
         input=prompt,
@@ -86,6 +142,85 @@ def _generate_with_gemini(prompt: str, api_key: str) -> str:
     if not isinstance(text, str) or not text.strip():
         raise ValueError("Gemini returned an empty narrative")
     return text.strip()
+
+
+def _classify_provider_error(exc: Exception, timeout_ms: int) -> tuple[GeminiFailureCategory, str]:
+    """Convert SDK and transport exceptions into safe user-facing diagnostics."""
+
+    exception_name = type(exc).__name__.lower()
+    code = getattr(exc, "code", None)
+    message = str(getattr(exc, "message", "") or exc).lower()
+    if isinstance(exc, TimeoutError) or "timeout" in exception_name or "timed out" in message:
+        return (
+            GeminiFailureCategory.TIMEOUT,
+            f"Gemini request timed out after {timeout_ms} ms",
+        )
+    if code in (401, 403) or any(
+        phrase in message for phrase in ("unauthenticated", "unauthorized", "invalid api key")
+    ):
+        return (
+            GeminiFailureCategory.AUTHENTICATION,
+            "Gemini authentication failed; verify GEMINI_API_KEY",
+        )
+    if code == 429 or any(
+        phrase in message for phrase in ("quota", "rate limit", "resource exhausted")
+    ):
+        return GeminiFailureCategory.QUOTA, "Gemini quota or rate limit was exceeded"
+    if code == 404 or "not found" in message or "model" in message and "invalid" in message:
+        return GeminiFailureCategory.MODEL_API, "Gemini model or API endpoint was not found"
+    if any(term in exception_name for term in ("requesterror", "connection", "connect")):
+        return GeminiFailureCategory.NETWORK, "A network error prevented contact with Gemini"
+    return (
+        GeminiFailureCategory.PROVIDER,
+        "Gemini narrative generation failed: unexpected provider error",
+    )
+
+
+def generate_narrative_result(
+    metric_name: str,
+    findings: Sequence[Mapping[str, object]],
+    subgroups: Sequence[Mapping[str, object]],
+    *,
+    require_gemini: bool = False,
+) -> NarrativeResult:
+    """Generate a narrative and retain a safe provider status for callers."""
+
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        error = "Gemini authentication is not configured: GEMINI_API_KEY is missing"
+        if require_gemini:
+            raise GeminiProviderError(error, GeminiFailureCategory.CONFIGURATION)
+        return NarrativeResult(
+            narrative=_fallback_narrative(metric_name, findings),
+            source="deterministic_fallback",
+            provider_error=error,
+        )
+
+    timeout_ms = _DEFAULT_TIMEOUT_MS
+    try:
+        timeout_ms = _timeout_ms()
+        narrative = _generate_with_gemini(
+            _build_prompt(metric_name, findings, subgroups), api_key
+        )
+    except GeminiProviderError as exc:
+        if require_gemini:
+            raise
+        return NarrativeResult(
+            narrative=_fallback_narrative(metric_name, findings),
+            source="deterministic_fallback",
+            provider_error=str(exc),
+        )
+    except Exception as exc:
+        category, error = _classify_provider_error(exc, timeout_ms)
+        _LOGGER.warning("Gemini narrative generation failed (%s): %s", category, error)
+        if require_gemini:
+            raise GeminiProviderError(error, category) from exc
+        return NarrativeResult(
+            narrative=_fallback_narrative(metric_name, findings),
+            source="deterministic_fallback",
+            provider_error=error,
+        )
+    return NarrativeResult(narrative=f"[Gemini] {narrative}", source="gemini")
 
 
 def generate_actionable_narrative(
@@ -101,18 +236,9 @@ def generate_actionable_narrative(
     application execution keeps the deterministic fallback for provider outages.
     """
 
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        if require_gemini:
-            raise GeminiProviderError("GEMINI_API_KEY is not configured")
-        return _fallback_narrative(metric_name, findings)
-
-    try:
-        return "[Gemini] " + _generate_with_gemini(
-            _build_prompt(metric_name, findings, subgroups), api_key
-        )
-    except Exception as exc:
-        _LOGGER.warning("Gemini narrative generation failed: %s", exc)
-        if require_gemini:
-            raise GeminiProviderError("Gemini narrative generation failed") from exc
-        return _fallback_narrative(metric_name, findings)
+    return generate_narrative_result(
+        metric_name,
+        findings,
+        subgroups,
+        require_gemini=require_gemini,
+    ).narrative

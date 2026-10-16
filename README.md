@@ -34,7 +34,12 @@ This check calls the same public adapter used by the application and exits with 
 key is missing or Gemini falls back. It does not print the API key.
 
 The default model can be changed without editing code by setting `GEMINI_MODEL` in `.env` if the
-provider reports that the default model is unavailable or temporarily overloaded.
+provider reports that the default model is unavailable or temporarily overloaded. The client
+timeout is configurable in milliseconds with `GEMINI_TIMEOUT_MS`; it defaults to `30000`.
+Provider failures are classified as timeout, authentication, model/API, quota, network, or
+configuration failures. Normal dashboard runs always retain the labeled deterministic fallback;
+the strict verification script exits nonzero with a safe category when Gemini cannot be reached.
+Neither the API key nor raw provider exception details are printed or shown.
 
 Run the demo:
 

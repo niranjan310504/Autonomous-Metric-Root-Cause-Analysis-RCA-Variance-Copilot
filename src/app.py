@@ -133,21 +133,40 @@ if preview_baseline is not None and preview_current is not None:
 if input_error:
     st.warning(input_error)
 
-if st.button("Run diagnostic", type="primary") and not input_error:
-    try:
-        if timeseries_frame is not None:
-            analysis_result, baseline, current = run_timeseries_analysis(
-                timeseries_frame, mode=timeseries_mode
-            )
-        elif baseline is not None and current is not None:
-            analysis_result = run_analysis(baseline, current)
-        else:
-            raise ValueError("Select or upload a complete dataset before running analysis.")
-        st.session_state["analysis_result"] = analysis_result
-        st.session_state["analysis_baseline"] = baseline
-        st.session_state["analysis_current"] = current
-    except (KeyError, ValueError, TimeoutError) as exc:
-        st.error(f"Analysis failed: {exc}")
+if st.button("Run diagnostic", type="primary"):
+    st.session_state.pop("analysis_result", None)
+    st.session_state.pop("analysis_baseline", None)
+    st.session_state.pop("analysis_current", None)
+    if input_error:
+        st.error(f"Diagnostic cannot start: {input_error}")
+    else:
+        with st.status("Running diagnostic...", expanded=True) as status:
+            try:
+                if timeseries_frame is not None:
+                    analysis_result, baseline, current = run_timeseries_analysis(
+                        timeseries_frame, mode=timeseries_mode
+                    )
+                elif baseline is not None and current is not None:
+                    analysis_result = run_analysis(baseline, current)
+                else:
+                    raise ValueError("Select or upload a complete dataset before running analysis.")
+                st.session_state["analysis_result"] = analysis_result
+                st.session_state["analysis_baseline"] = baseline
+                st.session_state["analysis_current"] = current
+                status.update(
+                    label="Diagnostic completed",
+                    state="complete",
+                    expanded=False,
+                )
+            except Exception as exc:
+                status.update(
+                    label="Diagnostic failed",
+                    state="error",
+                    expanded=True,
+                )
+                st.error(f"Diagnostic failed: {type(exc).__name__}: {exc}")
+                with st.expander("Technical details"):
+                    st.exception(exc)
 
 result = st.session_state.get("analysis_result")
 baseline = st.session_state.get("analysis_baseline", baseline)
@@ -160,7 +179,15 @@ if result is not None:
     metric_columns[1].metric(
         "Current conversion", f"{current.conversions.sum() / current.visits.sum():.2%}"
     )
-    st.success(result.narrative)
+    if result.narrative_source == "gemini":
+        st.success("Gemini narrative generated.")
+    elif result.narrative_source == "deterministic_fallback":
+        st.warning(
+            "Gemini was unavailable, so the deterministic fallback was used."
+        )
+        if result.provider_error:
+            st.caption(result.provider_error)
+    st.write(result.narrative)
     st.write("Trace: " + " -> ".join(result.trace))
 
     if baseline is not None and current is not None and result.schema_profile:

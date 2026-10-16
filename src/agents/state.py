@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -45,5 +45,7 @@ class RCAState(BaseModel):
     findings: list[Finding] = Field(default_factory=list)
     subgroups: list[dict[str, Any]] = Field(default_factory=list)
     narrative: str = ""
+    narrative_source: Literal["gemini", "deterministic_fallback"] = "deterministic_fallback"
+    provider_error: str | None = None
     trace: list[str] = Field(default_factory=list)
     error: str | None = None

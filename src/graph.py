@@ -29,6 +29,8 @@ class GraphState(TypedDict, total=False):
     findings: list[dict[str, Any]]
     subgroups: list[dict[str, Any]]
     narrative: str
+    narrative_source: str
+    provider_error: str | None
     trace: list[str]
     error: str | None
 

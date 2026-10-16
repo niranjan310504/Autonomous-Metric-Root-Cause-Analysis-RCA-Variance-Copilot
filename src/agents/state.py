@@ -28,6 +28,7 @@ class Finding(BaseModel):
     contribution: float
     rate_effect: float = 0.0
     mix_effect: float = 0.0
+    interaction_effect: float = 0.0
     evidence: str
 
 

@@ -68,6 +68,7 @@ if result is not None:
             for effect_type, effect_key in (
                 ("Rate effect", "rate_effect"),
                 ("Mix effect", "mix_effect"),
+                ("Interaction effect", "interaction_effect"),
             )
         ]
         effect_chart = px.bar(

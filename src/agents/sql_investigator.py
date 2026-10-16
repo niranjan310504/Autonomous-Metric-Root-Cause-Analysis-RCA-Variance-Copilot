@@ -31,6 +31,7 @@ def investigate(state: RCAState, manager: DuckDBManager) -> RCAState:
                     contribution=contribution,
                     rate_effect=item.rate_effect,
                     mix_effect=item.mix_effect,
+                    interaction_effect=item.interaction_effect,
                     evidence=(
                         f"{item.current_rate:.2%} current vs {item.baseline_rate:.2%} baseline; "
                         f"rate effect {item.rate_effect:+.2%}, "

@@ -31,6 +31,11 @@ def test_graph_produces_trace_and_finding(monkeypatch: pytest.MonkeyPatch) -> No
         finding.rate_effect != 0.0 or finding.mix_effect != 0.0
         for finding in result.findings
     )
+    assert all(
+        finding.rate_effect + finding.mix_effect + finding.interaction_effect
+        == pytest.approx(finding.contribution)
+        for finding in result.findings
+    )
     assert result.subgroups
     assert all(
         {"rule", "support", "conversion_rate", "lift_vs_overall"} <= subgroup.keys()

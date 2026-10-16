@@ -15,6 +15,7 @@ from agents.schema_inspector import inspect_schema
 from agents.sql_investigator import investigate
 from agents.state import RCAState
 from db.duckdb_manager import DuckDBManager
+from engine.time_series_baseline import slice_wow_baseline, slice_yoy_baseline
 
 
 class GraphState(TypedDict, total=False):
@@ -49,6 +50,30 @@ def run_analysis(baseline: pd.DataFrame, current: pd.DataFrame) -> RCAState:
         state = investigate(state, manager)
         state = synthesize_narrative(state)
     return state
+
+
+def run_timeseries_analysis(
+    df: pd.DataFrame, mode: str = "wow", timestamp_col: str = "timestamp"
+) -> tuple[RCAState, pd.DataFrame, pd.DataFrame]:
+    """Slice timestamped data and run the complete RCA workflow."""
+
+    slicers = {
+        "wow": slice_wow_baseline,
+        "yoy": slice_yoy_baseline,
+    }
+    slicer = slicers.get(mode.lower())
+    if slicer is None:
+        raise ValueError("mode must be either 'wow' or 'yoy'")
+
+    baseline, current = slicer(df, timestamp_col)
+    if baseline.empty or current.empty:
+        raise ValueError(f"{mode.lower()} requires two non-empty comparison windows")
+    for frame_name, frame in (("baseline", baseline), ("current", current)):
+        missing = {"visits", "conversions"} - set(frame.columns)
+        if missing:
+            raise KeyError(f"missing metric columns in {frame_name}: {sorted(missing)}")
+
+    return run_analysis(baseline, current), baseline, current
 
 
 def build_graph(manager: DuckDBManager) -> object:

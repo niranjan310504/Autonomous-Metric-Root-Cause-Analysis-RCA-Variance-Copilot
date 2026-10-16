@@ -1,6 +1,6 @@
 import pytest
 
-from alerting.slack_notifier import send_slack_alert
+from alerting.slack_notifier import format_slack_alert, send_slack_alert
 
 
 class FakeResponse:
@@ -33,6 +33,18 @@ def test_send_slack_alert_posts_formatted_payload(monkeypatch: pytest.MonkeyPatc
             "*Rate Effect*: -12.50% | *Mix Effect*: 2.50%"
         )
     }
+
+
+def test_format_slack_alert_matches_webhook_text() -> None:
+    assert format_slack_alert(
+        "conversion_rate",
+        "Investigate the payment path.",
+        {"rate_effect": -0.125, "mix_effect": 0.025},
+    ) == (
+        "🚨 *Metric Alert: conversion_rate*\n"
+        "Investigate the payment path.\n"
+        "*Rate Effect*: -12.50% | *Mix Effect*: 2.50%"
+    )
 
 
 def test_send_slack_alert_returns_false_for_non_200(

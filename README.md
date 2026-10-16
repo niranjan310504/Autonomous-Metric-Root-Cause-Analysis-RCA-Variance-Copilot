@@ -48,6 +48,21 @@ failures without affecting the diagnostic result.
 
 Generate the sample CSVs with `python data/generate_synthetic_data.py`.
 
+## Dashboard modes
+
+The Streamlit dashboard supports the preloaded aggregate benchmark, a reproducible timestamped
+time-series benchmark, and custom CSV uploads. The time-series benchmark is generated with
+`generate_timeseries_dataset(days=30)` and includes a documented final-weekend traffic and
+conversion anomaly. WoW mode uses adjacent seven-day windows; YoY mode requires two non-empty
+365-day windows, so generated 30-day data is intentionally insufficient for YoY. Upload at least
+730 days of timestamped data for a YoY comparison.
+
+Time-series CSVs require `timestamp`, `visits`, and `conversions` columns plus at least one
+dimension column. Aggregate custom mode accepts separate baseline and current CSVs with
+`visits` and `conversions`. After an analysis completes, the dashboard shows a reconciled
+Kitsberger waterfall, a rate/mix/interaction stacked bar, and a Slack live preview containing
+the exact markdown payload that will be sent.
+
 ## Architecture and safety
 
 - `src/db/duckdb_manager.py` validates single-statement `SELECT`/`WITH` SQL, caps results at

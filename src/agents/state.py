@@ -29,6 +29,9 @@ class Finding(BaseModel):
     rate_effect: float = 0.0
     mix_effect: float = 0.0
     interaction_effect: float = 0.0
+    p_value: float = 1.0
+    is_statistically_significant: bool = False
+    confidence_tier: Literal["high", "moderate", "noise"] = "noise"
     evidence: str
 
 

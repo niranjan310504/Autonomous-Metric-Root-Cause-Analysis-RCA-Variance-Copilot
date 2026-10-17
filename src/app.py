@@ -226,7 +226,23 @@ if result is not None:
     findings = [finding.model_dump() for finding in result.findings]
     if findings:
         st.subheader("Dimensional contributions")
-        st.dataframe(findings, use_container_width=True)
+        finding_rows = []
+        for finding in findings:
+            display_finding = dict(finding)
+            display_finding["BH-adjusted p-value"] = display_finding.pop("p_value")
+            display_finding["Statistically significant"] = display_finding.pop(
+                "is_statistically_significant"
+            )
+            display_finding["Confidence tier"] = display_finding.pop("confidence_tier")
+            finding_rows.append(display_finding)
+        significant_count = sum(
+            finding["Statistically significant"] for finding in finding_rows
+        )
+        st.metric(
+            "Statistically significant findings",
+            f"{significant_count}/{len(finding_rows)}",
+        )
+        st.dataframe(finding_rows, use_container_width=True)
         contribution_chart = px.bar(
             findings[:10],
             x="segment",

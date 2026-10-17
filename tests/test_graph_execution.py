@@ -37,6 +37,15 @@ def test_graph_produces_trace_and_finding(monkeypatch: pytest.MonkeyPatch) -> No
         == pytest.approx(finding.contribution)
         for finding in result.findings
     )
+    assert all(0.0 <= finding.p_value <= 1.0 for finding in result.findings)
+    assert all(
+        finding.confidence_tier in {"high", "moderate", "noise"}
+        for finding in result.findings
+    )
+    assert all(
+        "raw p-value" in finding.evidence and "adjusted p-value" in finding.evidence
+        for finding in result.findings
+    )
     assert result.subgroups
     assert all(
         {"rule", "support", "conversion_rate", "lift_vs_overall"} <= subgroup.keys()

@@ -47,6 +47,34 @@ def test_format_slack_alert_matches_webhook_text() -> None:
     )
 
 
+def test_format_slack_alert_includes_confidence_and_deep_dive() -> None:
+    formatted = format_slack_alert(
+        "conversion_rate",
+        "Investigate the payment path.",
+        {"rate_effect": -0.125, "mix_effect": 0.025},
+        confidence_tier="high",
+        deep_dive_triggered=True,
+        deep_dive_dimension="device x region",
+    )
+
+    assert "*Confidence*: 🟢 High Confidence" in formatted
+    assert "*Autonomous deep dive*: Triggered" in formatted
+    assert "*Cross-dimensions*: device x region" in formatted
+
+
+def test_format_slack_alert_reports_deep_dive_not_triggered() -> None:
+    formatted = format_slack_alert(
+        "conversion_rate",
+        "No interaction detected.",
+        {"rate_effect": 0, "mix_effect": 0},
+        confidence_tier="noise",
+        deep_dive_triggered=False,
+    )
+
+    assert "*Confidence*: ⚪ Statistical Noise" in formatted
+    assert "*Autonomous deep dive*: Not triggered" in formatted
+
+
 def test_send_slack_alert_returns_false_for_non_200(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -152,8 +152,7 @@ class DuckDBManager:
         self._connection.register(name, frame)
 
     def schema(self, table_name: str) -> list[dict[str, str]]:
-        if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", table_name):
-            raise ValueError("table name must be a simple identifier")
+        _validate_identifier(table_name, "table")
         rows = self._connection.execute(f"DESCRIBE {table_name}").fetchall()
         return [{"name": str(row[0]), "type": str(row[1])} for row in rows]
 

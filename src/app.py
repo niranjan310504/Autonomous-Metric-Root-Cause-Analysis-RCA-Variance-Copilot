@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import plotly.express as px
@@ -23,6 +24,7 @@ from data.generate_synthetic_data import (  # noqa: E402
 )
 
 from alerting.slack_notifier import format_slack_alert, send_slack_alert  # noqa: E402
+from db.duckdb_manager import DuckDBManager  # noqa: E402
 from engine.time_series_baseline import slice_wow_baseline, slice_yoy_baseline  # noqa: E402
 from engine.variance_waterfall import conversion_rate, dimension_waterfall  # noqa: E402
 from graph import run_analysis, run_timeseries_analysis  # noqa: E402
@@ -40,12 +42,51 @@ def _valid_metric_frame(frame: pd.DataFrame, require_dimension: bool = False) ->
     return has_metrics and (not require_dimension or bool(_usable_dimensions(frame)))
 
 
+def _confidence_badge(finding: dict[str, Any]) -> str:
+    labels = {
+        "high": "🟢 High Confidence",
+        "moderate": "🟡 Moderate Confidence",
+        "noise": "⚪ Statistical Noise",
+    }
+    return labels.get(str(finding.get("confidence_tier", "noise")), "⚪ Statistical Noise")
+
+
+def _safe_connection_label(connection: str) -> str:
+    return f"{connection[:3]}...{connection[-3:]}" if len(connection) > 8 else "***"
+
+
+def _load_database_metrics(
+    manager: DuckDBManager,
+    table: str,
+    timestamp_column: str,
+    numerator: str,
+    denominator: str,
+    dimensions: list[str],
+) -> pd.DataFrame:
+    frame = manager.query_aggregated_metric(
+        table,
+        [timestamp_column, *dimensions],
+        numerator,
+        denominator,
+    )
+    renamed = frame.rename(
+        columns={
+            timestamp_column: "timestamp",
+            numerator: "conversions",
+            denominator: "visits",
+        }
+    )
+    renamed["timestamp"] = pd.to_datetime(renamed["timestamp"], errors="raise")
+    return renamed.sort_values("timestamp").reset_index(drop=True)
+
+
 dataset_mode = st.sidebar.radio(
     "Dataset mode",
     [
         "Preloaded Aggregate Benchmark",
         "Time-Series (WoW / YoY Slicing)",
         "Custom CSV Upload",
+        "Direct Database (SQLite / Postgres)",
     ],
 )
 timeseries_mode = "wow"
@@ -55,6 +96,12 @@ timeseries_frame: pd.DataFrame | None = None
 preview_baseline: pd.DataFrame | None = None
 preview_current: pd.DataFrame | None = None
 input_error: str | None = None
+database_manager: DuckDBManager | None = st.session_state.get("database_manager")
+database_table = ""
+database_timestamp = ""
+database_numerator = ""
+database_denominator = ""
+database_dimensions: list[str] = []
 
 if dataset_mode == "Preloaded Aggregate Benchmark":
     baseline, current = generate_dataset()
@@ -70,7 +117,7 @@ elif dataset_mode == "Time-Series (WoW / YoY Slicing)":
     except (KeyError, ValueError) as exc:
         input_error = str(exc)
     context_key = f"{dataset_mode}:{timeseries_mode}"
-else:
+elif dataset_mode == "Custom CSV Upload":
     upload_shape = st.sidebar.radio("CSV shape", ["Time-series CSV", "Aggregate baseline/current"])
     if upload_shape == "Time-series CSV":
         uploaded = st.sidebar.file_uploader("Upload timestamped CSV", type="csv")
@@ -111,6 +158,99 @@ else:
                 input_error = "Aggregate CSVs require visits and conversions columns."
             elif not common_dimensions:
                 input_error = "Aggregate CSVs require at least one shared dimension column."
+else:
+    database_type = st.sidebar.selectbox("Database type", ["SQLite", "PostgreSQL"])
+    connection_string = st.sidebar.text_input(
+        "Connection path / URI",
+        type="password" if database_type == "PostgreSQL" else "default",
+    )
+    if st.sidebar.button("Test Connection & Introspect"):
+        if not connection_string.strip():
+            st.session_state["database_error"] = "A connection path or URI is required."
+        else:
+            manager = None
+            old_manager = st.session_state.pop("database_manager", None)
+            if old_manager is not None:
+                old_manager.close()
+            try:
+                manager = DuckDBManager()
+                manager.attach_database(database_type, connection_string)
+                st.session_state["database_manager"] = manager
+                st.session_state["database_tables"] = manager.list_tables()
+                st.session_state["database_error"] = None
+                st.session_state["database_connection_label"] = _safe_connection_label(
+                    connection_string
+                )
+            except (OSError, ValueError) as exc:
+                if manager is not None:
+                    manager.close()
+                st.session_state["database_error"] = str(exc)
+    if st.session_state.get("database_error"):
+        st.sidebar.error(st.session_state["database_error"])
+    database_manager = st.session_state.get("database_manager")
+    tables = st.session_state.get("database_tables", [])
+    if database_manager is not None and tables:
+        database_table = st.sidebar.selectbox("Target table", tables)
+        try:
+            schema = database_manager.schema(f"remote_db.{database_table}")
+            columns = [item["name"] for item in schema]
+            numeric_columns = [
+                item["name"]
+                for item in schema
+                if any(
+                    token in item["type"].upper()
+                    for token in ("INT", "DECIMAL", "DOUBLE", "FLOAT")
+                )
+            ]
+            if len(columns) < 1:
+                raise ValueError("selected table has no columns")
+            if len(numeric_columns) < 2:
+                raise ValueError("selected table requires at least two numeric columns")
+            database_timestamp = st.sidebar.selectbox("Timestamp column", columns)
+            database_numerator = st.sidebar.selectbox("Numerator column", numeric_columns)
+            denominator_options = [item for item in numeric_columns if item != database_numerator]
+            database_denominator = st.sidebar.selectbox(
+                "Denominator column",
+                denominator_options,
+            )
+            database_dimensions = st.sidebar.multiselect(
+                "Dimensions",
+                [
+                    item
+                    for item in columns
+                    if item
+                    not in {
+                        database_timestamp,
+                        database_numerator,
+                        database_denominator,
+                    }
+                ],
+            )
+            timeseries_mode = st.sidebar.radio("Comparison window", ["wow", "yoy"])
+            if database_dimensions:
+                database_frame = _load_database_metrics(
+                    database_manager,
+                    f"remote_db.{database_table}",
+                    database_timestamp,
+                    database_numerator,
+                    database_denominator,
+                    database_dimensions,
+                )
+                timeseries_frame = database_frame
+                context_key = (
+                    f"{dataset_mode}:{database_table}:{database_timestamp}:"
+                    f"{database_numerator}:{database_denominator}:{database_dimensions}:"
+                    f"{timeseries_mode}"
+                )
+            else:
+                input_error = "Select at least one dimension for dimensional attribution."
+                context_key = f"{dataset_mode}:incomplete"
+        except (IndexError, KeyError, ValueError, TypeError) as exc:
+            input_error = f"Database schema could not be loaded: {exc}"
+            context_key = f"{dataset_mode}:invalid"
+    else:
+        input_error = "Test a database connection to introspect available tables."
+        context_key = f"{dataset_mode}:unconnected"
 
 if st.session_state.get("analysis_context") != context_key:
     st.session_state.pop("analysis_result", None)
@@ -224,6 +364,31 @@ if result is not None:
         st.plotly_chart(waterfall_chart, use_container_width=True)
 
     findings = [finding.model_dump() for finding in result.findings]
+    deep_dive_findings = [
+        finding
+        for finding in findings
+        if result.deep_dive_dimension
+        and result.loop_count > 0
+        and finding["dimension"] == result.deep_dive_dimension
+    ]
+    if deep_dive_findings:
+        st.subheader("Cross-Dimensional Interaction Waterfall")
+        st.info(
+            "This drilldown was triggered automatically because significant "
+            "one-dimensional findings explained less than 70% of the metric change."
+        )
+        deep_dive_chart = px.bar(
+            deep_dive_findings,
+            x="segment",
+            y="contribution",
+            color="confidence_tier",
+            hover_data=["p_value", "rate_effect", "mix_effect", "interaction_effect"],
+            title=f"Cross-dimensional contributions ({result.deep_dive_dimension})",
+            labels={"p_value": "BH-adjusted p-value"},
+        )
+        deep_dive_chart.update_yaxes(tickformat=".2%")
+        st.plotly_chart(deep_dive_chart, use_container_width=True)
+
     if findings:
         st.subheader("Dimensional contributions")
         finding_rows = []
@@ -234,6 +399,7 @@ if result is not None:
                 "is_statistically_significant"
             )
             display_finding["Confidence tier"] = display_finding.pop("confidence_tier")
+            display_finding["Confidence"] = _confidence_badge(finding)
             finding_rows.append(display_finding)
         significant_count = sum(
             finding["Statistically significant"] for finding in finding_rows
@@ -293,13 +459,28 @@ if result is not None:
             st.error("SLACK_WEBHOOK_URL is not configured.")
         elif not findings:
             st.error("A Slack alert requires at least one dimensional finding.")
-        elif send_slack_alert(webhook_url, result.metric_name, result.narrative, findings[0]):
+        elif send_slack_alert(
+            webhook_url,
+            result.metric_name,
+            result.narrative,
+            findings[0],
+            confidence_tier=str(findings[0].get("confidence_tier", "noise")),
+            deep_dive_triggered=result.loop_count > 0,
+            deep_dive_dimension=result.deep_dive_dimension,
+        ):
             st.success("Slack alert sent.")
         else:
             st.error("Slack alert could not be delivered.")
     if findings:
         st.markdown("**Slack live preview**")
         st.code(
-            format_slack_alert(result.metric_name, result.narrative, findings[0]),
+            format_slack_alert(
+                result.metric_name,
+                result.narrative,
+                findings[0],
+                confidence_tier=str(findings[0].get("confidence_tier", "noise")),
+                deep_dive_triggered=result.loop_count > 0,
+                deep_dive_dimension=result.deep_dive_dimension,
+            ),
             language="markdown",
         )

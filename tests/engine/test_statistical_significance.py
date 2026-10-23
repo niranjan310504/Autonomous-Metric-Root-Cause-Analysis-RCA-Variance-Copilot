@@ -98,6 +98,28 @@ def test_low_volume_zero_conversion_segment_is_noise() -> None:
     assert result.confidence_tier == "noise"
 
 
+def test_benjamini_hochberg_uses_complete_hypothesis_family() -> None:
+    single_result = evaluate_findings_significance(
+        [_contribution("candidate", 10, 100, 20, 100)]
+    )[0]
+    family_results = evaluate_findings_significance(
+        [
+            _contribution("candidate", 10, 100, 20, 100),
+            _contribution("noise-1", 50, 100, 50, 100),
+            _contribution("noise-2", 50, 100, 50, 100),
+            _contribution("noise-3", 50, 100, 50, 100),
+        ]
+    )
+
+    assert single_result.raw_p_value == pytest.approx(0.047670381, rel=1e-6)
+    assert single_result.is_statistically_significant
+    candidate = next(
+        result for result in family_results if result.contribution.segment == "candidate"
+    )
+    assert not candidate.is_statistically_significant
+    assert candidate.confidence_tier == "noise"
+
+
 def test_significance_rejects_invalid_alpha_and_counts() -> None:
     with pytest.raises(ValueError, match="alpha"):
         evaluate_findings_significance([], alpha=1.0)

@@ -60,3 +60,5 @@ flowchart TD
     B3 --> B4["4. Hybrid LLM Narrative Synthesis (Gemini / Deterministic Fallback)"]
     B4 --> C1["5. Executive Plotly Waterfall & Stacked Bar UI"]
     B4 --> C2["6. Automated Slack / Webhook Push Alerts"]
+## Security guidelines
+   Do not read the env file or any secrets in the repo. All secrets must be injected via CI/CD or runtime environment variables.

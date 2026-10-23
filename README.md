@@ -11,6 +11,34 @@ An enterprise-grade, deterministic-first autonomous agentic copilot designed to 
 
 Built on a foundational principle: **Strict separation of compute and reasoning.** All statistical variance attribution, SQL execution, and hypothesis tests run through deterministic engines (DuckDB, NumPy, SciPy, Scikit-learn), while LLMs are strictly bounded to executive narrative synthesis and actionable decision support using precomputed evidence.
 
+## Direct database pushdown
+
+`DuckDBManager` can attach SQLite and PostgreSQL databases as read-only DuckDB
+catalogs. Attachments are managed through dedicated methods; arbitrary SQL
+continues to reject `ATTACH`, `DETACH`, DDL, DML, and multiple statements.
+
+```python
+from db.duckdb_manager import DuckDBManager
+
+with DuckDBManager() as manager:
+    manager.attach_database("sqlite", "metrics.sqlite")
+    print(manager.list_tables())
+    aggregates = manager.query_aggregated_metric(
+        "remote_db.clicks",
+        dimensions=["channel", "device"],
+        numerator="conversions",
+        denominator="visits",
+        where_clause="event_date >= '2026-01-01'",
+    )
+```
+
+Aggregations execute in DuckDB against the attached host database, returning
+only grouped rows rather than loading raw events. SQLite attachments use
+`READ_ONLY`; PostgreSQL attachments load DuckDB's PostgreSQL extension and use
+the same read-only mode. Connection strings are never included in attachment
+errors or state maintained by the manager. PostgreSQL extension installation
+may require the runtime's configured DuckDB extension repository.
+
 ---
 
 ## 🎯 Executive Summary & The Problem

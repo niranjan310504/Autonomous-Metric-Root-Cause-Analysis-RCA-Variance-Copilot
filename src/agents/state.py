@@ -52,3 +52,6 @@ class RCAState(BaseModel):
     provider_error: str | None = None
     trace: list[str] = Field(default_factory=list)
     error: str | None = None
+    requires_deep_dive: bool = False
+    loop_count: int = 0
+    deep_dive_dimension: str | None = None

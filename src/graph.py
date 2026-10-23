@@ -9,7 +9,7 @@ import pandas as pd
 from agents.hypothesis_generator import generate_hypotheses
 from agents.narrative_synthesizer import synthesize_narrative
 from agents.schema_inspector import inspect_schema
-from agents.sql_investigator import investigate
+from agents.sql_investigator import investigate, investigate_cross_dimensions
 from agents.state import RCAState
 from db.duckdb_manager import DuckDBManager
 from engine.time_series_baseline import slice_wow_baseline, slice_yoy_baseline
@@ -33,6 +33,9 @@ class GraphState(TypedDict, total=False):
     provider_error: str | None
     trace: list[str]
     error: str | None
+    requires_deep_dive: bool
+    loop_count: int
+    deep_dive_dimension: str | None
 
 
 def run_analysis(baseline: pd.DataFrame, current: pd.DataFrame) -> RCAState:
@@ -47,6 +50,8 @@ def run_analysis(baseline: pd.DataFrame, current: pd.DataFrame) -> RCAState:
         state = inspect_schema(state, manager)
         state = generate_hypotheses(state)
         state = investigate(state, manager)
+        if state.requires_deep_dive and state.loop_count < 1:
+            state = investigate_cross_dimensions(state, manager)
         state = synthesize_narrative(state)
     return state
 
@@ -94,16 +99,39 @@ def build_graph(manager: DuckDBManager) -> object:
     def investigation_node(values: GraphState) -> GraphState:
         return cast(GraphState, investigate(RCAState.model_validate(values), manager).model_dump())
 
+    def cross_investigation_node(values: GraphState) -> GraphState:
+        return cast(
+            GraphState,
+            investigate_cross_dimensions(RCAState.model_validate(values), manager).model_dump(),
+        )
+
     def narrative_node(values: GraphState) -> GraphState:
         return cast(GraphState, synthesize_narrative(RCAState.model_validate(values)).model_dump())
+
+    def routing_condition(values: GraphState) -> str:
+        if values.get("requires_deep_dive", False) and values.get("loop_count", 0) < 1:
+            return "cross_dimensional_investigation"
+        return "narrative"
 
     workflow.add_node("schema", cast(Any, schema_node))
     workflow.add_node("hypotheses", cast(Any, hypothesis_node))
     workflow.add_node("investigation", cast(Any, investigation_node))
+    workflow.add_node(
+        "cross_dimensional_investigation",
+        cast(Any, cross_investigation_node),
+    )
     workflow.add_node("narrative", cast(Any, narrative_node))
     workflow.set_entry_point("schema")
     workflow.add_edge("schema", "hypotheses")
     workflow.add_edge("hypotheses", "investigation")
-    workflow.add_edge("investigation", "narrative")
+    workflow.add_conditional_edges(
+        "investigation",
+        routing_condition,
+        {
+            "cross_dimensional_investigation": "cross_dimensional_investigation",
+            "narrative": "narrative",
+        },
+    )
+    workflow.add_edge("cross_dimensional_investigation", "narrative")
     workflow.add_edge("narrative", END)
     return workflow.compile()

@@ -110,12 +110,18 @@ To eliminate false alarms on sparse or volatile data:
 * **Algorithmic Scaling**: Uses Scikit-learn's `DecisionTreeClassifier` with native `sample_weight` over segment matrices.
 * Memory complexity scales with unique segment combinations $O(K)$, completely avoiding row-expansion $O(N_{\text{visits}})$ to prevent out-of-memory errors on massive event streams.
 
-### 4. Bounded In-Memory OLAP & SQL Guardrails
+### 4. Agentic 2D Cross-Dimensional Drilldown
+* Runs one-dimensional waterfall attribution and calculates cumulative explained variance ratio (CEVR) from statistically significant findings.
+* If significant one-dimensional findings explain less than 70% of the total metric change and at least two dimensions are available, the investigator selects the two strongest candidate dimensions.
+* A bounded cross-dimensional pass attributes composite segments such as `mobile x APAC`, applies the same FDR testing, and appends the results before narrative synthesis.
+* The deep-dive loop is capped at one pass, and composite attribution uses in-memory read-only analytical frames rather than creating database views.
+
+### 5. Bounded In-Memory OLAP & SQL Guardrails
 * Powered by **DuckDB** for ultra-fast in-memory columnar execution.
 * AST and regex sanitization strictly forbids mutating SQL statements (`DROP`, `DELETE`, `INSERT`, `UPDATE`, `ALTER`, `TRUNCATE`, `ATTACH`).
 * Strictly enforces single-statement read-only execution, bounded query timeouts, and row caps (`LIMIT 500`).
 
-### 5. Resilient Hybrid LLM Architecture
+### 6. Resilient Hybrid LLM Architecture
 * Leverages **Gemini 3.8 Flash** via the official Google GenAI Interactions API.
 * **Evidence-Only Prompting**: The LLM prompt is strictly supplied with precalculated statistical findings, effects, and subgroup rules. The LLM never computes math.
 * **Zero-Downtime Deterministic Fallback**: If `GEMINI_API_KEY` is omitted, or if the provider encounters quota, rate limits, timeouts, or network outages, the engine returns a labeled deterministic narrative.

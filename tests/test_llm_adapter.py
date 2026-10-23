@@ -24,23 +24,23 @@ SUBGROUPS: list[Mapping[str, object]] = [
 ]
 
 
-def test_gemini_uses_interactions_api(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_gemini_uses_content_generation_api(monkeypatch: pytest.MonkeyPatch) -> None:
     request: dict[str, str] = {}
 
     class FakeHttpOptions:
         def __init__(self, timeout: int) -> None:
             request["timeout"] = str(timeout)
 
-    class FakeInteractions:
-        def create(self, **kwargs: str) -> SimpleNamespace:
+    class FakeModels:
+        def generate_content(self, **kwargs: str) -> SimpleNamespace:
             request.update(kwargs)
-            return SimpleNamespace(output_text="Generated through interactions.")
+            return SimpleNamespace(text="Generated through content generation.")
 
     class FakeGenai:
         def __init__(self, api_key: str, http_options: FakeHttpOptions) -> None:
             assert api_key == "test-only-key"
             assert http_options is not None
-            self.interactions = FakeInteractions()
+            self.models = FakeModels()
 
     monkeypatch.setitem(
         sys.modules,
@@ -51,11 +51,11 @@ def test_gemini_uses_interactions_api(monkeypatch: pytest.MonkeyPatch) -> None:
 
     narrative = llm_adapter._generate_with_gemini("validated prompt", "test-only-key")
 
-    assert narrative == "Generated through interactions."
+    assert narrative == "Generated through content generation."
     assert request == {
         "model": "test-model",
-        "input": "validated prompt",
-        "timeout": "30000",
+        "contents": "validated prompt",
+        "timeout": "120000",
     }
 
 
@@ -66,13 +66,13 @@ def test_timeout_can_be_configured(monkeypatch: pytest.MonkeyPatch) -> None:
         def __init__(self, timeout: int) -> None:
             request["timeout"] = timeout
 
-    class FakeInteractions:
-        def create(self, **kwargs: str) -> SimpleNamespace:
-            return SimpleNamespace(output_text="Configured timeout response.")
+    class FakeModels:
+        def generate_content(self, **kwargs: str) -> SimpleNamespace:
+            return SimpleNamespace(text="Configured timeout response.")
 
     class FakeGenai:
         def __init__(self, api_key: str, http_options: FakeHttpOptions) -> None:
-            self.interactions = FakeInteractions()
+            self.models = FakeModels()
 
     monkeypatch.setitem(
         sys.modules,
@@ -179,7 +179,7 @@ def test_timeout_failure_is_classified_and_falls_back(
     result = llm_adapter.generate_narrative_result("conversion_rate", FINDINGS, SUBGROUPS)
 
     assert result.source == "deterministic_fallback"
-    assert result.provider_error == "Gemini request timed out after 30000 ms"
+    assert result.provider_error == "Gemini request timed out after 120000 ms"
     with pytest.raises(llm_adapter.GeminiProviderError, match="timed out"):
         llm_adapter.generate_narrative_result(
             "conversion_rate", FINDINGS, SUBGROUPS, require_gemini=True

@@ -192,10 +192,14 @@ Configure your `.env` file (or set environment variables):
 
 ```env
 GEMINI_API_KEY=your_actual_gemini_api_key_here
-GEMINI_MODEL=gemini-3.8-flash
-GEMINI_TIMEOUT_MS=30000
+GEMINI_MODEL=gemini-flash-latest
+GEMINI_TIMEOUT_MS=120000
 SLACK_WEBHOOK_URL=https://hooks.slack.com/services/... # Optional
 ```
+
+`GEMINI_MODEL` is optional. If omitted, the application uses
+`gemini-flash-latest`; a stale model that returns not-found is retried with this
+default. The timeout is in milliseconds.
 
 Verify your Gemini integration using the fail-fast smoke test:
 

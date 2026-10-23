@@ -13,8 +13,8 @@ from typing import Any, Literal
 
 from dotenv import load_dotenv
 
-_DEFAULT_MODEL = "gemini-3.8-flash"
-_DEFAULT_TIMEOUT_MS = 30_000
+_DEFAULT_MODEL = "gemini-flash-latest"
+_DEFAULT_TIMEOUT_MS = 120_000
 _LOGGER = logging.getLogger(__name__)
 
 load_dotenv()
@@ -123,7 +123,7 @@ def _timeout_ms() -> int:
 
 
 def _generate_with_gemini(prompt: str, api_key: str) -> str:
-    """Call Gemini's provider-recommended Interactions API."""
+    """Call Gemini's standard content-generation API."""
 
     timeout_ms = _timeout_ms()
     genai: Any = importlib.import_module("google.genai")
@@ -134,11 +134,25 @@ def _generate_with_gemini(prompt: str, api_key: str) -> str:
         api_key=api_key,
         http_options=genai_types.HttpOptions(timeout=timeout_ms),
     )
-    response: Any = client.interactions.create(
-        model=os.getenv("GEMINI_MODEL", _DEFAULT_MODEL),
-        input=prompt,
-    )
-    text = getattr(response, "output_text", None)
+    configured_model = os.getenv("GEMINI_MODEL", _DEFAULT_MODEL)
+    try:
+        response: Any = client.models.generate_content(
+            model=configured_model,
+            contents=prompt,
+        )
+    except Exception as exc:
+        if getattr(exc, "code", None) != 404 or configured_model == _DEFAULT_MODEL:
+            raise
+        _LOGGER.warning(
+            "Configured Gemini model %s was not found; retrying with %s",
+            configured_model,
+            _DEFAULT_MODEL,
+        )
+        response = client.models.generate_content(
+            model=_DEFAULT_MODEL,
+            contents=prompt,
+        )
+    text = getattr(response, "text", None)
     if not isinstance(text, str) or not text.strip():
         raise ValueError("Gemini returned an empty narrative")
     return text.strip()

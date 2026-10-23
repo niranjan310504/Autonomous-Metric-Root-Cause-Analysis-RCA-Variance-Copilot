@@ -51,6 +51,15 @@ def _confidence_badge(finding: dict[str, Any]) -> str:
     return labels.get(str(finding.get("confidence_tier", "noise")), "⚪ Statistical Noise")
 
 
+def _executive_findings(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        finding
+        for finding in findings
+        if finding.get("is_statistically_significant", False)
+        and finding.get("confidence_tier") != "noise"
+    ]
+
+
 def _safe_connection_label(connection: str) -> str:
     return f"{connection[:3]}...{connection[-3:]}" if len(connection) > 8 else "***"
 
@@ -364,9 +373,10 @@ if result is not None:
         st.plotly_chart(waterfall_chart, use_container_width=True)
 
     findings = [finding.model_dump() for finding in result.findings]
+    executive_findings = _executive_findings(findings)
     deep_dive_findings = [
         finding
-        for finding in findings
+        for finding in executive_findings
         if result.deep_dive_dimension
         and result.loop_count > 0
         and finding["dimension"] == result.deep_dive_dimension
@@ -389,10 +399,10 @@ if result is not None:
         deep_dive_chart.update_yaxes(tickformat=".2%")
         st.plotly_chart(deep_dive_chart, use_container_width=True)
 
-    if findings:
+    if executive_findings:
         st.subheader("Dimensional contributions")
         finding_rows = []
-        for finding in findings:
+        for finding in executive_findings:
             display_finding = dict(finding)
             display_finding["BH-adjusted p-value"] = display_finding.pop("p_value")
             display_finding["Statistically significant"] = display_finding.pop(
@@ -410,7 +420,7 @@ if result is not None:
         )
         st.dataframe(finding_rows, use_container_width=True)
         contribution_chart = px.bar(
-            findings[:10],
+            executive_findings[:10],
             x="segment",
             y="contribution",
             color="dimension",
@@ -425,7 +435,7 @@ if result is not None:
                 "effect_type": effect_type,
                 "effect": finding[effect_key],
             }
-            for finding in findings[:10]
+            for finding in executive_findings[:10]
             for effect_type, effect_key in (
                 ("Rate effect", "rate_effect"),
                 ("Mix effect", "mix_effect"),
@@ -457,28 +467,28 @@ if result is not None:
         webhook_url = os.getenv("SLACK_WEBHOOK_URL")
         if not webhook_url:
             st.error("SLACK_WEBHOOK_URL is not configured.")
-        elif not findings:
+        elif not executive_findings:
             st.error("A Slack alert requires at least one dimensional finding.")
         elif send_slack_alert(
             webhook_url,
             result.metric_name,
             result.narrative,
-            findings[0],
-            confidence_tier=str(findings[0].get("confidence_tier", "noise")),
+            executive_findings[0],
+            confidence_tier=str(executive_findings[0].get("confidence_tier", "noise")),
             deep_dive_triggered=result.loop_count > 0,
             deep_dive_dimension=result.deep_dive_dimension,
         ):
             st.success("Slack alert sent.")
         else:
             st.error("Slack alert could not be delivered.")
-    if findings:
+    if executive_findings:
         st.markdown("**Slack live preview**")
         st.code(
             format_slack_alert(
                 result.metric_name,
                 result.narrative,
-                findings[0],
-                confidence_tier=str(findings[0].get("confidence_tier", "noise")),
+                executive_findings[0],
+                confidence_tier=str(executive_findings[0].get("confidence_tier", "noise")),
                 deep_dive_triggered=result.loop_count > 0,
                 deep_dive_dimension=result.deep_dive_dimension,
             ),

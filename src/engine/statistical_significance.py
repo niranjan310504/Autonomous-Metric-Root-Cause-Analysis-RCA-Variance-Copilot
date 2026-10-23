@@ -12,6 +12,7 @@ from scipy.stats import norm  # type: ignore[import-untyped]
 from engine.variance_waterfall import VarianceContribution
 
 ConfidenceTier = Literal["high", "moderate", "noise"]
+MIN_SAMPLE_SIZE = 30
 
 
 @dataclass(frozen=True)
@@ -135,7 +136,11 @@ def evaluate_findings_significance(
         zip(ranked_indices, adjusted_ranked, strict=True),
         start=1,
     ):
-        significant = rank <= passing_rank
+        sufficient_sample = min(
+            findings[index].baseline_denominator,
+            findings[index].current_denominator,
+        ) >= MIN_SAMPLE_SIZE
+        significant = rank <= passing_rank and sufficient_sample
         results[index] = StatisticalFinding(
             contribution=findings[index],
             raw_p_value=tests[index].raw_p_value,

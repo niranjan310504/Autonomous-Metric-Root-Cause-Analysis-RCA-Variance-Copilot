@@ -76,6 +76,32 @@ def test_graph_with_mocked_gemini(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.narrative == "[Gemini] Executive narrative from mocked Gemini."
 
 
+def test_graph_triggers_cross_dimensional_investigation_for_interaction_anomaly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    baseline = pd.DataFrame(
+        [
+            {"device": "mobile", "region": "APAC", "visits": 100, "conversions": 20},
+            {"device": "mobile", "region": "EMEA", "visits": 100, "conversions": 20},
+            {"device": "desktop", "region": "APAC", "visits": 100, "conversions": 20},
+            {"device": "desktop", "region": "EMEA", "visits": 100, "conversions": 20},
+        ]
+    )
+    current = baseline.copy()
+    current["conversions"] = [60, 0, 0, 60]
+
+    result = graph.run_analysis(baseline, current)
+
+    assert result.loop_count == 1
+    assert result.deep_dive_dimension == "device x region"
+    assert "cross_dimensional_investigator" in result.trace
+    assert any(
+        finding.dimension == "device x region" and finding.segment == "mobile x APAC"
+        for finding in result.findings
+    )
+
+
 def test_timeseries_graph_runs_wow_analysis(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     frame = _generate_timeseries_dataset()

@@ -98,6 +98,16 @@ def test_low_volume_zero_conversion_segment_is_noise() -> None:
     assert result.confidence_tier == "noise"
 
 
+def test_low_volume_significant_delta_is_noise() -> None:
+    result = evaluate_findings_significance(
+        [_contribution("small", 8, 29, 20, 29)]
+    )[0]
+
+    assert result.raw_p_value < 0.05
+    assert not result.is_statistically_significant
+    assert result.confidence_tier == "noise"
+
+
 def test_benjamini_hochberg_uses_complete_hypothesis_family() -> None:
     single_result = evaluate_findings_significance(
         [_contribution("candidate", 10, 100, 20, 100)]

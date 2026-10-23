@@ -103,7 +103,15 @@ def _apply_cevr_gate(
     if abs(delta) <= 1e-12:
         return
     significant = [finding for finding in findings if finding.is_statistically_significant]
-    coverage = sum(abs(finding.contribution) for finding in significant) / abs(delta)
+    coverage_by_dimension = {
+        dimension: max(
+            abs(finding.contribution)
+            for finding in significant
+            if finding.dimension == dimension
+        ) if any(finding.dimension == dimension for finding in significant) else 0.0
+        for dimension in dimensions
+    }
+    coverage = max(coverage_by_dimension.values(), default=0.0) / abs(delta)
     if coverage >= _COVERAGE_THRESHOLD:
         return
     candidates = _candidate_dimensions(state, findings)
